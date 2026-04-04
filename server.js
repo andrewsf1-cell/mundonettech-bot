@@ -535,7 +535,6 @@ if (forcedProduct && state.step) {
 
     // Si está esperando color
     if (state.step === "awaiting_color" && state.product) {
-
   if (isConversationalMessage(text)) {
     const context = await getRecentContext(wa_id, 10);
     const aiReply = await chatWithAI(text, context);
