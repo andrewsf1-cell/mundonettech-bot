@@ -6,6 +6,172 @@ import { createClient } from "@supabase/supabase-js";
 const app = express();
 app.use(express.json());
 
+const products = [
+  {
+    id: "redmi-watch-5-pulsera",
+    keywords: ["pulsera redmi watch 5", "correa redmi watch 5", "repuesto redmi watch 5"],
+    name: "Pulsera De Repuesto Para Redmi Watch 5",
+    category: "pulsera",
+    model: "Redmi Watch 5",
+    price: "16.900",
+    colors: ["Aguamarina", "Amarillo", "Azul oscuro", "Blanco", "Caqui", "Claro", "Gris", "Lila", "Negro", "Rojo", "Rosa pálido", "Verde oscuro"]
+  },
+  {
+    id: "redmi-watch-5-active-pulsera",
+    keywords: ["pulsera redmi watch 5 active", "correa redmi watch 5 active", "repuesto redmi watch 5 active"],
+    name: "Pulsera De Repuesto Para Redmi Watch 5 Active",
+    category: "pulsera",
+    model: "Redmi Watch 5 Active",
+    price: "16.900",
+    colors: ["Aguamarina", "Azul Claro", "Azul oscuro", "Blanco", "Caqui", "Claro", "Gris", "Lila", "Negro", "Rojo", "Rosa pálido", "Verde Claro", "Verde oscuro"]
+  },
+  {
+    id: "redmi-watch-5-lite-pulsera",
+    keywords: ["pulsera redmi watch 5 lite", "correa redmi watch 5 lite", "repuesto redmi watch 5 lite"],
+    name: "Pulsera De Repuesto Para Redmi Watch 5 Lite",
+    category: "pulsera",
+    model: "Redmi Watch 5 Lite",
+    price: "16.900",
+    colors: ["Aguamarina", "Azul Claro", "Azul oscuro", "Blanco", "Caqui", "Claro", "Gris", "Lila", "Negro", "Rojo", "Rosa pálido", "Verde Claro", "Verde oscuro"]
+  },
+  {
+    id: "redmi-watch-5-funda",
+    keywords: ["funda redmi watch 5", "protector redmi watch 5", "funda protectora redmi watch 5"],
+    name: "Funda Protector De Pantalla Para Redmi Watch 5",
+    category: "funda",
+    model: "Redmi Watch 5",
+    price: "16.900",
+    colors: ["Azul Oscuro", "Azul TPU", "Negro", "Negro TPU", "Rosa", "Rosa TPU", "Transparente", "Transparente TPU"]
+  },
+  {
+    id: "redmi-watch-5-active-funda",
+    keywords: ["funda redmi watch 5 active", "protector redmi watch 5 active", "funda protectora redmi watch 5 active"],
+    name: "Funda Protector De Pantalla Para Redmi Watch 5 Active",
+    category: "funda",
+    model: "Redmi Watch 5 Active",
+    price: "16.900",
+    colors: ["Azul Oscuro", "Azul TPU", "Negro", "Negro TPU", "Rosa", "Rosa TPU", "Transparente", "Transparente TPU"]
+  },
+  {
+    id: "galaxy-watch-7-pulsera",
+    keywords: ["pulsera galaxy watch 7", "correa galaxy watch 7", "repuesto galaxy watch 7"],
+    name: "Pulsera De Repuesto Para Samsung Galaxy Watch 7 / 6 / 5 / 4 / FE",
+    category: "pulsera",
+    model: "Samsung Galaxy Watch 7",
+    price: "21.900",
+    colors: ["Amarillo", "Azul Claro", "Azul Oscuro", "Azul", "Blanco", "Caqui", "Gris Claro", "Gris Oscuro", "Lila", "Naranja", "Negro", "Rosa pálido", "Verde Militar", "Verde Oliva"]
+  },
+  {
+    id: "galaxy-watch-7-funda",
+    keywords: ["funda galaxy watch 7", "protector galaxy watch 7", "funda protectora galaxy watch 7"],
+    name: "Funda Protector De Pantalla Para Samsung Galaxy Watch 7 TPU",
+    category: "funda",
+    model: "Samsung Galaxy Watch 7",
+    price: "17.900",
+    colors: ["Azul 40mm/44mm", "Dorado 40mm/44mm", "Negro 40mm/44mm", "Plateado 40mm/44mm", "Rosa 40mm/44mm", "Transparente 40mm/44mm"]
+  },
+  {
+    id: "galaxy-watch-8-pulsera",
+    keywords: ["pulsera galaxy watch 8", "correa galaxy watch 8", "repuesto galaxy watch 8", "pulsera galaxy watch 8 classic"],
+    name: "Pulsera De Repuesto Para Samsung Galaxy Watch 8 / 8 Classic",
+    category: "pulsera",
+    model: "Samsung Galaxy Watch 8 / 8 Classic",
+    price: "22.900",
+    colors: ["Azul Claro", "Azul Oscuro", "Blanco", "Caqui", "Gris", "Lila", "Naranja", "Negro", "Rosa pálido", "Verde Militar"]
+  },
+  {
+    id: "galaxy-watch-8-funda",
+    keywords: ["funda galaxy watch 8", "protector galaxy watch 8", "funda protectora galaxy watch 8"],
+    name: "Funda Protector De Pantalla Para Samsung Galaxy Watch 8 TPU",
+    category: "funda",
+    model: "Samsung Galaxy Watch 8",
+    price: "18.900",
+    colors: ["Azul 40mm/44mm", "Dorado 40mm/44mm", "Negro 40mm/44mm", "Plateado 40mm/44mm", "Rosa 40mm/44mm", "Transparente 40mm/44mm", "Oro Rosa 40mm/44mm"]
+  },
+  {
+    id: "galaxy-watch-8-classic-lateral",
+    keywords: ["funda galaxy watch 8 classic", "protector galaxy watch 8 classic", "funda lateral galaxy watch 8 classic"],
+    name: "Funda Protector Lateral Para Samsung Galaxy Watch 8 Classic",
+    category: "funda",
+    model: "Samsung Galaxy Watch 8 Classic",
+    price: "18.900",
+    colors: ["Azul 40mm/44mm", "Dorado 40mm/44mm", "Negro 40mm/44mm", "Plateado 40mm/44mm", "Rosa 40mm/44mm", "Transparente 40mm/44mm", "Oro Rosa 40mm/44mm"]
+  },
+  {
+    id: "iphone-17-pro-funda",
+    keywords: ["funda iphone 17 pro", "funda iphone 17 pro max", "funda premium iphone 17 pro", "funda premium iphone 17 pro max"],
+    name: "Funda Premium para iPhone 17 Pro y 17 Pro Max, con soporte magnético giratorio 360",
+    category: "funda",
+    model: "iPhone 17 Pro / 17 Pro Max",
+    price: "49.900",
+    colors: ["Blanco", "Naranja", "Negro", "Transparente"]
+  },
+  {
+    id: "iphone-17-pro-lente",
+    keywords: ["protector lente iphone 17 pro", "protector lente iphone 17 pro max", "lente iphone 17 pro", "lente iphone 17 pro max"],
+    name: "Protector Lente iPhone 17 Pro / 17 Pro Max Premium",
+    category: "protector lente",
+    model: "iPhone 17 Pro / 17 Pro Max",
+    price: "29.900",
+    colors: ["Azul", "Naranja", "Negro", "Gris"]
+  },
+  {
+    id: "xiaomi-67w-cargador",
+    keywords: ["cargador xiaomi 67w", "cargador 67w xiaomi", "turbo xiaomi 67w"],
+    name: "Cargador Xiaomi 67W Turbo original",
+    category: "cargador",
+    model: "Xiaomi 67W",
+    price: "116.900",
+    colors: ["Blanco"]
+  },
+  {
+    id: "xiaomi-cable-usb-c",
+    keywords: ["cable xiaomi tipo c", "cable usb tipo c xiaomi", "cable xiaomi 6a", "cable turbo xiaomi"],
+    name: "Cable Usb Original Tipo C 6A Xiaomi Carga Turbo / Rapida",
+    category: "cable",
+    model: "Xiaomi Tipo C",
+    price: "34.900",
+    colors: ["Blanco"]
+  }
+];
+
+function normalizeText(text) {
+  return text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+}
+
+function findProductFromText(text) {
+  const normalized = normalizeText(text);
+
+  for (const product of products) {
+    for (const keyword of product.keywords) {
+      if (normalized.includes(normalizeText(keyword))) {
+        return product;
+      }
+    }
+  }
+
+  return null;
+}
+
+function buildProductReply(product, userText = "") {
+  const wantsPrice = /precio|cuanto|cu[aá]nto vale|cuesta/i.test(userText);
+  const wantsColors = /color|colores/i.test(userText);
+
+  if (wantsColors) {
+    return `Sí lo manejamos 🔥 Los colores disponibles para ${product.name} son: ${product.colors.join(", ")}. ¿Cuál te gustaría pedir?`;
+  }
+
+  if (wantsPrice) {
+    return `${product.name} está en ${product.price}. ${product.colors?.length ? `Colores disponibles: ${product.colors.join(", ")}. ` : ""}¿Te lo separo de una vez?`;
+  }
+
+  return `Sí lo manejamos 🔥 ${product.name} está en ${product.price}. ${product.colors?.length ? `Tengo disponible en: ${product.colors.join(", ")}. ` : ""}¿Te gustaría pedirlo ahora?`;
+}
+
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
 // Verificación webhook (Meta)
@@ -45,27 +211,40 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
-    // Reglas baratas
-    const ruleReply = ruleEngine(text);
-    if (ruleReply) {
-      await sendWhatsAppText(wa_id, ruleReply);
-      await saveMessage(wa_id, "out", ruleReply);
-      await upsertLead(wa_id, wa_name, text, {});
-      return res.sendStatus(200);
-    }
+    // Reglas rápidas
+const ruleReply = ruleEngine(text);
+if (ruleReply) {
+  await sendWhatsAppText(wa_id, ruleReply);
+  await saveMessage(wa_id, "out", ruleReply);
+  await upsertLead(wa_id, wa_name, text, { stage: inferStage(text) });
+  return res.sendStatus(200);
+}
 
-    // IA
-    const context = await getRecentContext(wa_id, 10);
-    const aiReply = await chatWithAI(text, context);
+// Detección de producto exacto
+const detectedProduct = findProductFromText(text);
+if (detectedProduct) {
+  const productReply = buildProductReply(detectedProduct, text);
 
-    await sendWhatsAppText(wa_id, aiReply);
-    await saveMessage(wa_id, "out", aiReply);
-    await upsertLead(wa_id, wa_name, text, { stage: inferStage(text) });
+  await sendWhatsAppText(wa_id, productReply);
+  await saveMessage(wa_id, "out", productReply);
+  await upsertLead(wa_id, wa_name, text, {
+    stage: inferStage(text),
+    product_model: detectedProduct.model,
+    accessory_type: detectedProduct.category
+  });
 
-    return res.sendStatus(200);
-  } catch (err) {
-    console.error("Webhook error:", err?.response?.data || err.message);
-    return res.sendStatus(200);
+  return res.sendStatus(200);
+}
+
+// IA
+const context = await getRecentContext(wa_id, 10);
+const aiReply = await chatWithAI(text, context);
+
+await sendWhatsAppText(wa_id, aiReply);
+await saveMessage(wa_id, "out", aiReply);
+await upsertLead(wa_id, wa_name, text, { stage: inferStage(text) });
+
+return res.sendStatus(200);
   }
 });
 
