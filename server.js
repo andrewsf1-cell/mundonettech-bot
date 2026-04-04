@@ -501,19 +501,21 @@ app.post("/webhook", async (req, res) => {
     // 3) Si escribe un producto nuevo en cualquier momento, cambia el pedido
     const forcedProduct = findProductFromText(text);
     if (forcedProduct && state.step) {
-      startNewOrderFromProduct(state, forcedProduct);
+  startNewOrderFromProduct(state, forcedProduct);
 
-      const reply = `Perfecto 👌 cambiamos al nuevo producto. ${buildProductReply(forcedProduct, text)}`;
-      await sendWhatsAppText(wa_id, reply);
-      await saveMessage(wa_id, "out", reply);
-      await upsertLead(wa_id, wa_name, text, {
-        stage: "Cambio de producto",
-        product_model: forcedProduct.model,
-        accessory_type: forcedProduct.category
-      });
+  console.log("NEW PRODUCT FLOW RESET", state);
 
-      return res.sendStatus(200);
-    }
+  const reply = `Perfecto 👌 cambiamos al nuevo producto. ${buildProductReply(forcedProduct, text)}`;
+  await sendWhatsAppText(wa_id, reply);
+  await saveMessage(wa_id, "out", reply);
+  await upsertLead(wa_id, wa_name, text, {
+    stage: "Cambio de producto",
+    product_model: forcedProduct.model,
+    accessory_type: forcedProduct.category
+  });
+
+  return res.sendStatus(200);
+}
 
     // 4) Si detecta producto y todavía no está en flujo
     if (!state.step) {
