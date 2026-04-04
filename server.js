@@ -413,27 +413,30 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
-    // Si detecta producto exacto
-    const detectedProduct = findProductFromText(text);
-    if (detectedProduct && !state.step) {
-      state.product = detectedProduct;
-      state.color = null;
-      state.quantity = null;
-      state.city = null;
-      state.paymentMethod = null;
-      state.step = "awaiting_color";
+    // Si detecta producto exacto y todavía no está en flujo
+    if (!state.step) {
+      const detectedProduct = findProductFromText(text);
 
-      const reply = buildProductReply(detectedProduct, text);
+      if (detectedProduct) {
+        state.product = detectedProduct;
+        state.color = null;
+        state.quantity = null;
+        state.city = null;
+        state.paymentMethod = null;
+        state.step = "awaiting_color";
 
-      await sendWhatsAppText(wa_id, reply);
-      await saveMessage(wa_id, "out", reply);
-      await upsertLead(wa_id, wa_name, text, {
-        stage: "Producto detectado",
-        product_model: detectedProduct.model,
-        accessory_type: detectedProduct.category
-      });
+        const reply = buildProductReply(detectedProduct, text);
 
-      return res.sendStatus(200);
+        await sendWhatsAppText(wa_id, reply);
+        await saveMessage(wa_id, "out", reply);
+        await upsertLead(wa_id, wa_name, text, {
+          stage: "Producto detectado",
+          product_model: detectedProduct.model,
+          accessory_type: detectedProduct.category
+        });
+
+        return res.sendStatus(200);
+      }
     }
 
     // Si está esperando color
@@ -574,7 +577,7 @@ function ruleEngine(text) {
     return null;
   }
 
-  // Primero pagos, para que no confunda contraentrega con entrega/envío
+  // Primero pagos
   if (/(pago|transferencia|contraentrega|contra entrega|nequi|daviplata|bancolombia)/i.test(t)) {
     return "Manejamos transferencia y pago contraentrega según ciudad. Si quieres, te confirmo cuál te aplica según tu ubicación.";
   }
