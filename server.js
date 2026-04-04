@@ -933,11 +933,25 @@ async function saveMessage(wa_id, direction, body) {
 }
 
 async function upsertLead(wa_id, wa_name, last_message, fields) {
-  const { data: existing } = await supabase.from("leads").select("id").eq("wa_id", wa_id).maybeSingle();
-  const payload = { wa_id, wa_name, last_message, updated_at: new Date().toISOString(), ...fields };
+  const { data: existing } = await supabase
+    .from("leads")
+    .select("id")
+    .eq("wa_id", wa_id)
+    .maybeSingle();
 
-  if (existing?.id) await supabase.from("leads").update(payload).eq("wa_id", wa_id);
-  else await supabase.from("leads").insert([payload]);
+  const payload = {
+    wa_id,
+    wa_name,
+    last_message,
+    updated_at: new Date().toISOString(),
+    ...fields
+  };
+
+  if (existing?.id) {
+    await supabase.from("leads").update(payload).eq("wa_id", wa_id);
+  } else {
+    await supabase.from("leads").insert([payload]);
+  }
 }
 
 async function getRecentContext(wa_id, limit = 10) {
