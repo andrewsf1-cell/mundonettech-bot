@@ -135,6 +135,9 @@ const products = [
   }
 ];
 
+const conversationState = new Map();
+
+
 function normalizeText(text) {
   return text
     .toLowerCase()
@@ -162,14 +165,135 @@ function buildProductReply(product, userText = "") {
   const wantsColors = /color|colores/i.test(userText);
 
   if (wantsColors) {
-    return `Sí lo manejamos 🔥 Los colores disponibles para ${product.name} son: ${product.colors.join(", ")}. ¿Cuál te gustaría pedir?`;
+    return `Sí lo manejamos 🔥 Los colores disponibles para ${product.name} son: ${product.colors.join(", ")}. ¿Cuál te gustaría?`;
   }
 
   if (wantsPrice) {
-    return `${product.name} está en ${product.price}. ${product.colors?.length ? `Colores disponibles: ${product.colors.join(", ")}. ` : ""}¿Te lo separo de una vez?`;
+    return `${product.name} está en ${product.price}. ${product.colors?.length ? `Colores disponibles: ${product.colors.join(", ")}. ` : ""}¿Qué color te gustaría?`;
   }
 
-  return `Sí lo manejamos 🔥 ${product.name} está en ${product.price}. ${product.colors?.length ? `Tengo disponible en: ${product.colors.join(", ")}. ` : ""}¿Te gustaría pedirlo ahora?`;
+  return `Sí lo manejamos 🔥 ${product.name} está en ${product.price}. ${product.colors?.length ? `Tengo disponible en: ${product.colors.join(", ")}. ` : ""}¿Qué color te gustaría?`;
+}
+
+function getState(wa_id) {
+  if (!conversationState.has(wa_id)) {
+    conversationState.set(wa_id, {
+      product: null,
+      color: null,
+      quantity: null,
+      city: null,
+      paymentMethod: null,
+      step: null
+    });
+  }
+
+  return conversationState.get(wa_id);
+}
+
+function resetState(wa_id) {
+  conversationState.set(wa_id, {
+    product: null,
+    color: null,
+    quantity: null,
+    city: null,
+    paymentMethod: null,
+    step: null
+  });
+}
+
+function detectColor(text, product) {
+  if (!product?.colors?.length) return null;
+
+  const normalizedText = normalizeText(text);
+
+  for (const color of product.colors) {
+    if (normalizedText.includes(normalizeText(color))) {
+      return color;
+    }
+  }
+
+  return null;
+}
+
+function detectQuantity(text) {
+  const match = text.match(/\b([1-9][0-9]?)\b/);
+  if (!match) return null;
+
+  return parseInt(match[1], 10);
+}
+
+function detectCity(text) {
+  const normalized = normalizeText(text);
+
+  const cities = [
+    "bogota",
+    "soacha",
+    "medellin",
+    "cali",
+    "barranquilla",
+    "cartagena",
+    "bucaramanga",
+    "cucuta",
+    "ibague",
+    "pereira",
+    "manizales",
+    "armenia",
+    "santa marta",
+    "villavicencio",
+    "pasto",
+    "monteria",
+    "neiva",
+    "popayan",
+    "tunja"
+  ];
+
+  for (const city of cities) {
+    if (normalized.includes(city)) {
+      return city;
+    }
+  }
+
+  return text.trim();
+}
+
+function detectPaymentMethod(text) {
+  const normalized = normalizeText(text);
+
+  if (normalized.includes("contraentrega") || normalized.includes("contra entrega")) {
+    return "Contraentrega";
+  }
+
+  if (
+    normalized.includes("transferencia") ||
+    normalized.includes("nequi") ||
+    normalized.includes("daviplata") ||
+    normalized.includes("bancolombia")
+  ) {
+    return "Transferencia";
+  }
+
+  return null;
+}
+
+function getShippingInfo(city, quantity = 1, productPrice = 0) {
+  const normalizedCity = normalizeText(city || "");
+  const total = (productPrice || 0) * (quantity || 1);
+
+  if (total >= 99000) {
+    return "Tu compra aplica para envío gratis 🚚";
+  }
+
+  const bogotaZonesText = "Si estás en zonas seleccionadas de Bogotá o Soacha, el envío cuesta 10.000 y puede llegar el mismo día si compras antes de la 1:00 pm. En otras zonas o ciudades, el envío tarda de 1 a 3 días hábiles y el valor depende de la ubicación.";
+
+  if (normalizedCity.includes("bogota") || normalizedCity.includes("soacha")) {
+    return "Para Bogotá o Soacha, el envío inicia desde 10.000 en zonas seleccionadas y puede llegar el mismo día si compras antes de la 1:00 pm 🚀";
+  }
+
+  return "Para tu ciudad, el envío tarda de 1 a 3 días hábiles y el valor se confirma según ubicación exacta 📦";
+}
+
+function parsePrice(priceText) {
+  return Number(String(priceText).replace(/\./g, "").replace(/,/g, "").trim()) || 0;
 }
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
@@ -202,12 +326,140 @@ app.post("/webhook", async (req, res) => {
 
     await saveMessage(wa_id, "in", text);
 
-    // Handoff
-    if (/(asesor|humano|persona|llámame)/i.test(text)) {
+    const state = getState(wa_id);
+
+    // Handoff manual
+    if (/(asesor|humano|persona|llamame|llámame)/i.test(text)) {
       const reply = "Listo. Ya te atiende un asesor. Dime tu modelo exacto y ciudad para ir adelantando.";
       await sendWhatsAppText(wa_id, reply);
       await saveMessage(wa_id, "out", reply);
       await upsertLead(wa_id, wa_name, text, { stage: "Pide asesor" });
+      return res.sendStatus(200);
+    }
+
+    // Si detecta producto exacto
+    const detectedProduct = findProductFromText(text);
+    if (detectedProduct) {
+      state.product = detectedProduct;
+      state.color = null;
+      state.quantity = null;
+      state.city = null;
+      state.paymentMethod = null;
+      state.step = "awaiting_color";
+
+      const reply = buildProductReply(detectedProduct, text);
+
+      await sendWhatsAppText(wa_id, reply);
+      await saveMessage(wa_id, "out", reply);
+      await upsertLead(wa_id, wa_name, text, {
+        stage: "Producto detectado",
+        product_model: detectedProduct.model,
+        accessory_type: detectedProduct.category
+      });
+
+      return res.sendStatus(200);
+    }
+
+    // Si está esperando color
+    if (state.step === "awaiting_color" && state.product) {
+      const detectedColor = detectColor(text, state.product);
+
+      if (detectedColor) {
+        state.color = detectedColor;
+        state.step = "awaiting_quantity";
+
+        const reply = `Perfecto 🔥 ${detectedColor}. ¿Cuántas unidades vas a llevar?`;
+
+        await sendWhatsAppText(wa_id, reply);
+        await saveMessage(wa_id, "out", reply);
+        return res.sendStatus(200);
+      }
+
+      const reply = `Tengo estos colores disponibles para ${state.product.name}: ${state.product.colors.join(", ")}. ¿Cuál te gustaría?`;
+
+      await sendWhatsAppText(wa_id, reply);
+      await saveMessage(wa_id, "out", reply);
+      return res.sendStatus(200);
+    }
+
+    // Si está esperando cantidad
+    if (state.step === "awaiting_quantity" && state.product) {
+      const quantity = detectQuantity(text);
+
+      if (quantity) {
+        state.quantity = quantity;
+        state.step = "awaiting_city";
+
+        const reply = `Listo, ${quantity} unidad(es). ¿En qué ciudad estás para confirmarte el envío?`;
+
+        await sendWhatsAppText(wa_id, reply);
+        await saveMessage(wa_id, "out", reply);
+        return res.sendStatus(200);
+      }
+
+      const reply = "Perfecto. ¿Cuántas unidades vas a llevar?";
+
+      await sendWhatsAppText(wa_id, reply);
+      await saveMessage(wa_id, "out", reply);
+      return res.sendStatus(200);
+    }
+
+    // Si está esperando ciudad
+    if (state.step === "awaiting_city" && state.product) {
+      const city = detectCity(text);
+      state.city = city;
+      state.step = "awaiting_payment";
+
+      const shippingInfo = getShippingInfo(
+        city,
+        state.quantity || 1,
+        parsePrice(state.product.price)
+      );
+
+      const reply = `${shippingInfo} ¿Prefieres pagar por transferencia o contraentrega?`;
+
+      await sendWhatsAppText(wa_id, reply);
+      await saveMessage(wa_id, "out", reply);
+      return res.sendStatus(200);
+    }
+
+    // Si está esperando método de pago
+    if (state.step === "awaiting_payment" && state.product) {
+      const paymentMethod = detectPaymentMethod(text);
+
+      if (paymentMethod) {
+        state.paymentMethod = paymentMethod;
+        state.step = "awaiting_order_details";
+
+        const reply = `Perfecto 🔥 Entonces para dejarte el pedido listo envíame por favor:\n- Nombre\n- Ciudad\n- Dirección\n- Teléfono\n\nSi es entrega en oficina, también la cédula.`;
+
+        await sendWhatsAppText(wa_id, reply);
+        await saveMessage(wa_id, "out", reply);
+
+        await upsertLead(wa_id, wa_name, text, {
+          stage: "Listo para cerrar",
+          product_model: state.product.model,
+          accessory_type: state.product.category,
+          color: state.color,
+          city: state.city,
+          payment_method: state.paymentMethod
+        });
+
+        return res.sendStatus(200);
+      }
+
+      const reply = "Prefieres pagar por transferencia o contraentrega?";
+
+      await sendWhatsAppText(wa_id, reply);
+      await saveMessage(wa_id, "out", reply);
+      return res.sendStatus(200);
+    }
+
+    // Si ya está listo para dejar datos, ya no lo saques del flujo
+    if (state.step === "awaiting_order_details" && state.product) {
+      const reply = "Perfecto, quedo atento a tus datos para dejarte el pedido listo ✅";
+      await sendWhatsAppText(wa_id, reply);
+      await saveMessage(wa_id, "out", reply);
       return res.sendStatus(200);
     }
 
@@ -217,22 +469,6 @@ app.post("/webhook", async (req, res) => {
       await sendWhatsAppText(wa_id, ruleReply);
       await saveMessage(wa_id, "out", ruleReply);
       await upsertLead(wa_id, wa_name, text, { stage: inferStage(text) });
-      return res.sendStatus(200);
-    }
-
-    // Detección de producto exacto
-    const detectedProduct = findProductFromText(text);
-    if (detectedProduct) {
-      const productReply = buildProductReply(detectedProduct, text);
-
-      await sendWhatsAppText(wa_id, productReply);
-      await saveMessage(wa_id, "out", productReply);
-      await upsertLead(wa_id, wa_name, text, {
-        stage: inferStage(text),
-        product_model: detectedProduct.model,
-        accessory_type: detectedProduct.category
-      });
-
       return res.sendStatus(200);
     }
 
@@ -262,6 +498,11 @@ function ruleEngine(text) {
     return null;
   }
 
+  // Primero pagos, para que no confunda contraentrega con entrega/envío
+  if (/(pago|transferencia|contraentrega|contra entrega|nequi|daviplata|bancolombia)/i.test(t)) {
+    return "Manejamos transferencia y pago contraentrega según ciudad. Si quieres, te confirmo cuál te aplica según tu ubicación.";
+  }
+
   if (/precio/i.test(t) && !/iphone|redmi|galaxy|watch|xiaomi|cargador|cable|pulsera|funda|protector/i.test(t)) {
     return "Claro. Dime el producto exacto o el modelo de tu equipo y te doy el precio de una vez 👌";
   }
@@ -272,10 +513,6 @@ function ruleEngine(text) {
 
   if (/(garant[ií]a|garantia)/i.test(t)) {
     return "Sí, todos nuestros productos tienen garantía por defectos de fábrica ✅";
-  }
-
-  if (/(pago|transferencia|contraentrega|contra entrega|nequi|daviplata|bancolombia)/i.test(t)) {
-    return "Manejamos transferencia y pago contraentrega según ciudad. Si quieres, te confirmo cuál te aplica según tu ubicación.";
   }
 
   if (/(compatible|compatibilidad|sirve|le sirve)/i.test(t)) {
