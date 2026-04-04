@@ -372,6 +372,69 @@ function parsePrice(priceText) {
   return Number(String(priceText).replace(/\./g, "").replace(/,/g, "").trim()) || 0;
 }
 
+function detectIntent(text) {
+  const t = normalizeText(text);
+
+  if (
+    t.includes("quiero cambiar el pedido") ||
+    t.includes("cambiar pedido") ||
+    t.includes("quiero otro producto") ||
+    t.includes("mejor otro producto") ||
+    t.includes("quiero empezar de nuevo") ||
+    t.includes("empecemos de nuevo") ||
+    t.includes("empezar de nuevo") ||
+    t.includes("borra ese pedido") ||
+    t.includes("ya no quiero ese")
+  ) {
+    return "restart_order";
+  }
+
+  if (
+    t.startsWith("mejor ") ||
+    t.startsWith("cambialo a ") ||
+    t.startsWith("cambiar a ")
+  ) {
+    if (t.includes("contraentrega") || t.includes("contra entrega") || t.includes("transferencia") || t.includes("nequi") || t.includes("daviplata") || t.includes("bancolombia")) {
+      return "change_payment";
+    }
+
+    const hasNumber = /\b([1-9][0-9]?)\b/.test(t);
+    if (hasNumber) return "change_quantity";
+
+    return "change_detail";
+  }
+
+  if (
+    t.includes("quiero cambiar el color") ||
+    t.includes("otro color") ||
+    t.includes("cambiar color")
+  ) {
+    return "change_color";
+  }
+
+  return "continue_flow";
+}
+
+function startNewOrderFromProduct(state, product) {
+  state.product = product;
+  state.color = null;
+  state.quantity = null;
+  state.city = null;
+  state.paymentMethod = null;
+  state.step = "awaiting_color";
+}
+
+function buildOrderSummary(state) {
+  return [
+    "Perfecto 🔥 Te resumo tu pedido:",
+    `- Producto: ${state.product?.name || "No definido"}`,
+    `- Color: ${state.color || "No definido"}`,
+    `- Cantidad: ${state.quantity || "No definida"}`,
+    `- Ciudad: ${state.city || "No definida"}`,
+    `- Método de pago: ${state.paymentMethod || "No definido"}`
+  ].join("\n");
+}
+
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
 // Verificación webhook (Meta)
@@ -403,6 +466,37 @@ app.post("/webhook", async (req, res) => {
     await saveMessage(wa_id, "in", text);
 
     const state = getState(wa_id);
+
+    const intent = detectIntent(text);
+
+// Si quiere reiniciar el pedido
+if (intent === "restart_order") {
+  resetState(wa_id);
+
+  const reply = "Listo 👌 cambiamos el pedido sin problema. ¿Qué producto quieres ahora?";
+  await sendWhatsAppText(wa_id, reply);
+  await saveMessage(wa_id, "out", reply);
+  await upsertLead(wa_id, wa_name, text, { stage: "Reinicia pedido" });
+
+  return res.sendStatus(200);
+}
+
+// Si detecta un nuevo producto aunque ya esté en flujo, cambia el pedido
+const forcedProduct = findProductFromText(text);
+if (forcedProduct && state.step) {
+  startNewOrderFromProduct(state, forcedProduct);
+
+  const reply = `Perfecto 👌 cambiamos al nuevo producto. ${buildProductReply(forcedProduct, text)}`;
+  await sendWhatsAppText(wa_id, reply);
+  await saveMessage(wa_id, "out", reply);
+  await upsertLead(wa_id, wa_name, text, {
+    stage: "Cambio de producto",
+    product_model: forcedProduct.model,
+    accessory_type: forcedProduct.category
+  });
+
+  return res.sendStatus(200);
+}
 
     // Handoff manual
     if (/(asesor|humano|persona|llamame|llámame)/i.test(text)) {
@@ -441,25 +535,25 @@ app.post("/webhook", async (req, res) => {
 
     // Si está esperando color
     if (state.step === "awaiting_color" && state.product) {
-      const detectedColor = detectColor(text, state.product);
+  const detectedColor = detectColor(text, state.product);
 
-      if (detectedColor) {
-        state.color = detectedColor;
-        state.step = "awaiting_quantity";
+  if (detectedColor) {
+    state.color = detectedColor;
+    state.step = "awaiting_quantity";
 
-        const reply = `Perfecto 🔥 ${detectedColor}. ¿Cuántas unidades vas a llevar?`;
+    const reply = `Perfecto 🔥 ${detectedColor}. ¿Cuántas unidades vas a llevar?`;
 
-        await sendWhatsAppText(wa_id, reply);
-        await saveMessage(wa_id, "out", reply);
-        return res.sendStatus(200);
-      }
+    await sendWhatsAppText(wa_id, reply);
+    await saveMessage(wa_id, "out", reply);
+    return res.sendStatus(200);
+  }
 
-      const reply = `Tengo estos colores disponibles para ${state.product.name}: ${state.product.colors.join(", ")}. ¿Cuál te gustaría?`;
+  const reply = `Tengo estos colores disponibles para ${state.product.name}: ${state.product.colors.join(", ")}. ¿Cuál te gustaría?`;
 
-      await sendWhatsAppText(wa_id, reply);
-      await saveMessage(wa_id, "out", reply);
-      return res.sendStatus(200);
-    }
+  await sendWhatsAppText(wa_id, reply);
+  await saveMessage(wa_id, "out", reply);
+  return res.sendStatus(200);
+}
 
     // Si está esperando cantidad
     if (state.step === "awaiting_quantity" && state.product) {
@@ -485,62 +579,118 @@ app.post("/webhook", async (req, res) => {
 
     // Si está esperando ciudad
     if (state.step === "awaiting_city" && state.product) {
-      const city = detectCity(text);
-      state.city = city;
-      state.step = "awaiting_payment";
+  const city = detectCity(text);
+  state.city = city;
+  state.step = "awaiting_payment";
 
-      const shippingInfo = getShippingInfo(
-        city,
-        state.quantity || 1,
-        parsePrice(state.product.price)
-      );
+  const shippingInfo = getShippingInfo(
+    city,
+    state.quantity || 1,
+    parsePrice(state.product.price)
+  );
 
-      const reply = `${shippingInfo} ¿Prefieres pagar por transferencia o contraentrega?`;
+  const reply = `${shippingInfo} ¿Prefieres pagar por transferencia o contraentrega?`;
 
-      await sendWhatsAppText(wa_id, reply);
-      await saveMessage(wa_id, "out", reply);
-      return res.sendStatus(200);
-    }
+  await sendWhatsAppText(wa_id, reply);
+  await saveMessage(wa_id, "out", reply);
+  return res.sendStatus(200);
+}
 
     // Si está esperando método de pago
     if (state.step === "awaiting_payment" && state.product) {
-      const paymentMethod = detectPaymentMethod(text);
+  const paymentMethod = detectPaymentMethod(text);
 
-      if (paymentMethod) {
-        state.paymentMethod = paymentMethod;
-        state.step = "awaiting_order_details";
+  if (paymentMethod) {
+    state.paymentMethod = paymentMethod;
+    state.step = "awaiting_order_details";
 
-        const reply = `Perfecto 🔥 Entonces para dejarte el pedido listo envíame por favor:\n- Nombre\n- Ciudad\n- Dirección\n- Teléfono\n\nSi es entrega en oficina, también la cédula.`;
+    const summary = buildOrderSummary(state);
 
-        await sendWhatsAppText(wa_id, reply);
-        await saveMessage(wa_id, "out", reply);
+    const reply = `${summary}\n\nAhora para dejarte el pedido listo envíame por favor:\n- Nombre\n- Dirección\n- Teléfono\n\nSi es entrega en oficina, también la cédula.`;
 
-        await upsertLead(wa_id, wa_name, text, {
-          stage: "Listo para cerrar",
-          product_model: state.product.model,
-          accessory_type: state.product.category,
-          color: state.color,
-          city: state.city,
-          payment_method: state.paymentMethod
-        });
+    await sendWhatsAppText(wa_id, reply);
+    await saveMessage(wa_id, "out", reply);
 
-        return res.sendStatus(200);
-      }
+    await upsertLead(wa_id, wa_name, text, {
+      stage: "Listo para cerrar",
+      product_model: state.product.model,
+      accessory_type: state.product.category,
+      color: state.color,
+      city: state.city,
+      payment_method: state.paymentMethod
+    });
 
-      const reply = "¿Prefieres pagar por transferencia o contraentrega?";
+    return res.sendStatus(200);
+  }
 
-      await sendWhatsAppText(wa_id, reply);
-      await saveMessage(wa_id, "out", reply);
-      return res.sendStatus(200);
-    }
+  const reply = "¿Prefieres pagar por transferencia o contraentrega?";
+
+  await sendWhatsAppText(wa_id, reply);
+  await saveMessage(wa_id, "out", reply);
+  return res.sendStatus(200);
+}
 
     // Si ya está listo para dejar datos
     if (state.step === "awaiting_order_details" && state.product) {
-      const reply = "Perfecto, quedo atento a tus datos para dejarte el pedido listo ✅";
-      await sendWhatsAppText(wa_id, reply);
-      await saveMessage(wa_id, "out", reply);
-      return res.sendStatus(200);
-    }
+  // Si quiere cambiar producto aún en esta etapa
+  const changedProduct = findProductFromText(text);
+  if (changedProduct) {
+    startNewOrderFromProduct(state, changedProduct);
+
+    const reply = `Claro 👌 cambiamos el pedido. ${buildProductReply(changedProduct, text)}`;
+    await sendWhatsAppText(wa_id, reply);
+    await saveMessage(wa_id, "out", reply);
+    return res.sendStatus(200);
+  }
+
+  // Si cambia color
+  const changedColor = detectColor(text, state.product);
+  if (changedColor) {
+    state.color = changedColor;
+
+    const reply = `${buildOrderSummary(state)}\n\nListo, ya actualicé el color ✅ Ahora envíame por favor:\n- Nombre\n- Dirección\n- Teléfono`;
+    await sendWhatsAppText(wa_id, reply);
+    await saveMessage(wa_id, "out", reply);
+    return res.sendStatus(200);
+  }
+
+  // Si cambia cantidad
+  const changedQuantity = detectQuantity(text);
+  if (changedQuantity) {
+    state.quantity = changedQuantity;
+
+    const reply = `${buildOrderSummary(state)}\n\nListo, ya actualicé la cantidad ✅ Ahora envíame por favor:\n- Nombre\n- Dirección\n- Teléfono`;
+    await sendWhatsAppText(wa_id, reply);
+    await saveMessage(wa_id, "out", reply);
+    return res.sendStatus(200);
+  }
+
+  // Si cambia ciudad
+  if (changedCity && normalizeText(text).length > 3 && !/\d/.test(text)) {
+    state.city = changedCity;
+
+    const reply = `${buildOrderSummary(state)}\n\nListo, ya actualicé la ciudad ✅ Ahora envíame por favor:\n- Nombre\n- Dirección\n- Teléfono`;
+    await sendWhatsAppText(wa_id, reply);
+    await saveMessage(wa_id, "out", reply);
+    return res.sendStatus(200);
+  }
+
+  // Si cambia pago
+  const changedPayment = detectPaymentMethod(text);
+  if (changedPayment) {
+    state.paymentMethod = changedPayment;
+
+    const reply = `${buildOrderSummary(state)}\n\nPerfecto, ya actualicé el método de pago ✅ Ahora envíame por favor:\n- Nombre\n- Dirección\n- Teléfono`;
+    await sendWhatsAppText(wa_id, reply);
+    await saveMessage(wa_id, "out", reply);
+    return res.sendStatus(200);
+  }
+
+  const reply = "Perfecto, quedo atento a tus datos para dejarte el pedido listo ✅";
+  await sendWhatsAppText(wa_id, reply);
+  await saveMessage(wa_id, "out", reply);
+  return res.sendStatus(200);
+}
 
     // Reglas rápidas
     const ruleReply = ruleEngine(text);
@@ -603,7 +753,7 @@ function ruleEngine(text) {
   }
 
   return null;
-}
+}d
 
 async function chatWithAI(userText, contextMessages) {
   const system = `
