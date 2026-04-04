@@ -520,20 +520,25 @@ app.post("/webhook", async (req, res) => {
       const detectedProduct = findProductFromText(text);
 
       if (detectedProduct) {
-        startNewOrderFromProduct(state, detectedProduct);
+  state.product = detectedProduct;
 
-        const reply = buildProductReply(detectedProduct, text);
+  // 🔥 RESET TOTAL DEL FLUJO
+  state.color = null;
+  state.quantity = null;
+  state.city = null;
+  state.payment = null;
 
-        await sendWhatsAppText(wa_id, reply);
-        await saveMessage(wa_id, "out", reply);
-        await upsertLead(wa_id, wa_name, text, {
-          stage: "Producto detectado",
-          product_model: detectedProduct.model,
-          accessory_type: detectedProduct.category
-        });
+  state.step = "awaiting_color";
 
-        return res.sendStatus(200);
-      }
+  const reply = `Perfecto 👌 cambiamos al nuevo producto. 
+Si lo manejamos 🔥 ${detectedProduct.name} está en ${detectedProduct.price}. 
+${detectedProduct.colors}. ¿Qué color te gustaría?`;
+
+  await sendWhatsAppText(wa_id, reply);
+  await saveMessage(wa_id, "out", reply);
+
+  return res.sendStatus(200);
+}
     }
 
     // 5) Esperando color
