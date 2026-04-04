@@ -665,13 +665,6 @@ if (forcedProduct && state.step) {
   return res.sendStatus(200);
 }
 
-  const reply = "¿Prefieres pagar por transferencia o contraentrega?";
-
-  await sendWhatsAppText(wa_id, reply);
-  await saveMessage(wa_id, "out", reply);
-  return res.sendStatus(200);
-}
-
     // Si ya está listo para dejar datos
     if (state.step === "awaiting_order_details" && state.product) {
   // Si quiere cambiar producto aún en esta etapa
@@ -708,6 +701,7 @@ if (forcedProduct && state.step) {
   }
 
   // Si cambia ciudad
+  const changedCity = detectCity(text);
   if (changedCity && normalizeText(text).length > 3 && !/\d/.test(text)) {
     state.city = changedCity;
 
