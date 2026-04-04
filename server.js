@@ -351,15 +351,6 @@ function detectPaymentMethod(text) {
   return null;
 }
 
-  if (isConversationalMessage(text)) {
-    const context = await getRecentContext(wa_id, 10);
-    const aiReply = await chatWithAI(text, context);
-
-    await sendWhatsAppText(wa_id, aiReply);
-    await saveMessage(wa_id, "out", aiReply);
-    return res.sendStatus(200);
-  }
-
 function getShippingInfo(city, quantity = 1, productPrice = 0) {
   const normalizedCity = normalizeText(city || "");
   const total = (productPrice || 0) * (quantity || 1);
