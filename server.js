@@ -146,6 +146,37 @@ function normalizeText(text) {
     .trim();
 }
 
+function levenshtein(a, b) {
+  const matrix = Array.from({ length: b.length + 1 }, () => []);
+
+  for (let i = 0; i <= b.length; i++) matrix[i][0] = i;
+  for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+
+  for (let i = 1; i <= b.length; i++) {
+    for (let j = 1; j <= a.length; j++) {
+      if (b.charAt(i - 1) === a.charAt(j - 1)) {
+        matrix[i][j] = matrix[i - 1][j - 1];
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1,
+          matrix[i][j - 1] + 1,
+          matrix[i - 1][j] + 1
+        );
+      }
+    }
+  }
+
+  return matrix[b.length][a.length];
+}
+
+function isSimilarWord(input, target, maxDistance = 2) {
+  const a = normalizeText(input);
+  const b = normalizeText(target);
+
+  if (a.includes(b) || b.includes(a)) return true;
+  return levenshtein(a, b) <= maxDistance;
+}
+
 function findProductFromText(text) {
   const normalized = normalizeText(text);
 
@@ -205,12 +236,29 @@ function detectColor(text, product) {
   if (!product?.colors?.length) return null;
 
   const normalizedText = normalizeText(text);
+  const words = normalizedText.split(/\s+/);
 
   for (const color of product.colors) {
     const normalizedColor = normalizeText(color);
+    const colorWords = normalizedColor.split(/\s+/);
 
-    // Detecta coincidencia parcial (ej: "negro 40mm")
-    if (normalizedText.includes(normalizedColor.split(" ")[0])) {
+    // Coincidencia exacta o parcial directa
+    if (normalizedText.includes(normalizedColor)) {
+      return color;
+    }
+
+    // Coincidencia aproximada por palabras
+    let matches = 0;
+    for (const cw of colorWords) {
+      for (const w of words) {
+        if (isSimilarWord(w, cw, 2)) {
+          matches++;
+          break;
+        }
+      }
+    }
+
+    if (matches >= Math.max(1, colorWords.length - 1)) {
       return color;
     }
   }
@@ -227,6 +275,7 @@ function detectQuantity(text) {
 
 function detectCity(text) {
   const normalized = normalizeText(text);
+  const words = normalized.split(/\s+/);
 
   const cities = [
     "bogota",
@@ -251,7 +300,19 @@ function detectCity(text) {
   ];
 
   for (const city of cities) {
-    if (normalized.includes(city)) {
+    const cityWords = city.split(" ");
+    let matches = 0;
+
+    for (const cw of cityWords) {
+      for (const w of words) {
+        if (isSimilarWord(w, cw, 2)) {
+          matches++;
+          break;
+        }
+      }
+    }
+
+    if (matches >= cityWords.length) {
       return city;
     }
   }
@@ -261,17 +322,29 @@ function detectCity(text) {
 
 function detectPaymentMethod(text) {
   const normalized = normalizeText(text);
+  const words = normalized.split(/\s+/);
 
-  if (normalized.includes("contraentrega") || normalized.includes("contra entrega")) {
+  const contraWords = ["contraentrega", "contra", "entrega"];
+  const transferWords = ["transferencia", "nequi", "daviplata", "bancolombia"];
+
+  let contraScore = 0;
+  let transferScore = 0;
+
+  for (const word of words) {
+    for (const target of contraWords) {
+      if (isSimilarWord(word, target, 2)) contraScore++;
+    }
+
+    for (const target of transferWords) {
+      if (isSimilarWord(word, target, 2)) transferScore++;
+    }
+  }
+
+  if (normalized.includes("contraentrega") || normalized.includes("contra entrega") || contraScore >= 2) {
     return "Contraentrega";
   }
 
-  if (
-    normalized.includes("transferencia") ||
-    normalized.includes("nequi") ||
-    normalized.includes("daviplata") ||
-    normalized.includes("bancolombia")
-  ) {
+  if (transferScore >= 1) {
     return "Transferencia";
   }
 
