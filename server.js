@@ -753,7 +753,7 @@ function ruleEngine(text) {
   }
 
   return null;
-}d
+}
 
 async function chatWithAI(userText, contextMessages) {
   const system = `
