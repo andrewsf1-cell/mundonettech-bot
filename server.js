@@ -466,39 +466,21 @@ app.post("/webhook", async (req, res) => {
     await saveMessage(wa_id, "in", text);
 
     const state = getState(wa_id);
-
     const intent = detectIntent(text);
 
-// Si quiere reiniciar el pedido
-if (intent === "restart_order") {
-  resetState(wa_id);
+    // 1) Reiniciar pedido
+    if (intent === "restart_order") {
+      resetState(wa_id);
 
-  const reply = "Listo 👌 cambiamos el pedido sin problema. ¿Qué producto quieres ahora?";
-  await sendWhatsAppText(wa_id, reply);
-  await saveMessage(wa_id, "out", reply);
-  await upsertLead(wa_id, wa_name, text, { stage: "Reinicia pedido" });
+      const reply = "Listo 👌 cambiamos el pedido sin problema. ¿Qué producto quieres ahora?";
+      await sendWhatsAppText(wa_id, reply);
+      await saveMessage(wa_id, "out", reply);
+      await upsertLead(wa_id, wa_name, text, { stage: "Reinicia pedido" });
 
-  return res.sendStatus(200);
-}
+      return res.sendStatus(200);
+    }
 
-// Si detecta un nuevo producto aunque ya esté en flujo, cambia el pedido
-const forcedProduct = findProductFromText(text);
-if (forcedProduct && state.step) {
-  startNewOrderFromProduct(state, forcedProduct);
-
-  const reply = `Perfecto 👌 cambiamos al nuevo producto. ${buildProductReply(forcedProduct, text)}`;
-  await sendWhatsAppText(wa_id, reply);
-  await saveMessage(wa_id, "out", reply);
-  await upsertLead(wa_id, wa_name, text, {
-    stage: "Cambio de producto",
-    product_model: forcedProduct.model,
-    accessory_type: forcedProduct.category
-  });
-
-  return res.sendStatus(200);
-}
-
-    // Handoff manual
+    // 2) Handoff manual
     if (/(asesor|humano|persona|llamame|llámame)/i.test(text)) {
       const reply = "Listo. Ya te atiende un asesor. Dime tu modelo exacto y ciudad para ir adelantando.";
       await sendWhatsAppText(wa_id, reply);
@@ -507,17 +489,29 @@ if (forcedProduct && state.step) {
       return res.sendStatus(200);
     }
 
-    // Si detecta producto exacto y todavía no está en flujo
+    // 3) Si escribe un producto nuevo en cualquier momento, cambia el pedido
+    const forcedProduct = findProductFromText(text);
+    if (forcedProduct && state.step) {
+      startNewOrderFromProduct(state, forcedProduct);
+
+      const reply = `Perfecto 👌 cambiamos al nuevo producto. ${buildProductReply(forcedProduct, text)}`;
+      await sendWhatsAppText(wa_id, reply);
+      await saveMessage(wa_id, "out", reply);
+      await upsertLead(wa_id, wa_name, text, {
+        stage: "Cambio de producto",
+        product_model: forcedProduct.model,
+        accessory_type: forcedProduct.category
+      });
+
+      return res.sendStatus(200);
+    }
+
+    // 4) Si detecta producto y todavía no está en flujo
     if (!state.step) {
       const detectedProduct = findProductFromText(text);
 
       if (detectedProduct) {
-        state.product = detectedProduct;
-        state.color = null;
-        state.quantity = null;
-        state.city = null;
-        state.paymentMethod = null;
-        state.step = "awaiting_color";
+        startNewOrderFromProduct(state, detectedProduct);
 
         const reply = buildProductReply(detectedProduct, text);
 
@@ -533,202 +527,207 @@ if (forcedProduct && state.step) {
       }
     }
 
-    // Si está esperando color
+    // 5) Esperando color
     if (state.step === "awaiting_color" && state.product) {
-  if (isConversationalMessage(text)) {
-    const context = await getRecentContext(wa_id, 10);
-    const aiReply = await chatWithAI(text, context);
+      if (isConversationalMessage(text)) {
+        const context = await getRecentContext(wa_id, 10);
+        const aiReply = await chatWithAI(text, context);
 
-    await sendWhatsAppText(wa_id, aiReply);
-    await saveMessage(wa_id, "out", aiReply);
-    return res.sendStatus(200);
-  }
-  const detectedColor = detectColor(text, state.product);
+        await sendWhatsAppText(wa_id, aiReply);
+        await saveMessage(wa_id, "out", aiReply);
+        return res.sendStatus(200);
+      }
 
-  if (detectedColor) {
-    state.color = detectedColor;
-    state.step = "awaiting_quantity";
+      const detectedColor = detectColor(text, state.product);
 
-    const reply = `Perfecto 🔥 ${detectedColor}. ¿Cuántas unidades vas a llevar?`;
+      if (detectedColor) {
+        state.color = detectedColor;
+        state.step = "awaiting_quantity";
 
-    await sendWhatsAppText(wa_id, reply);
-    await saveMessage(wa_id, "out", reply);
-    return res.sendStatus(200);
-  }
+        const reply = `Perfecto 🔥 ${detectedColor}. ¿Cuántas unidades vas a llevar?`;
 
-  const reply = `Tengo estos colores disponibles para ${state.product.name}: ${state.product.colors.join(", ")}. ¿Cuál te gustaría?`;
+        await sendWhatsAppText(wa_id, reply);
+        await saveMessage(wa_id, "out", reply);
+        return res.sendStatus(200);
+      }
 
-  await sendWhatsAppText(wa_id, reply);
-  await saveMessage(wa_id, "out", reply);
-  return res.sendStatus(200);
-}
+      const reply = `Tengo estos colores disponibles para ${state.product.name}: ${state.product.colors.join(", ")}. ¿Cuál te gustaría?`;
 
-    // Si está esperando cantidad
+      await sendWhatsAppText(wa_id, reply);
+      await saveMessage(wa_id, "out", reply);
+      return res.sendStatus(200);
+    }
+
+    // 6) Esperando cantidad
     if (state.step === "awaiting_quantity" && state.product) {
-  if (isConversationalMessage(text)) {
-    const context = await getRecentContext(wa_id, 10);
-    const aiReply = await chatWithAI(text, context);
+      if (isConversationalMessage(text)) {
+        const context = await getRecentContext(wa_id, 10);
+        const aiReply = await chatWithAI(text, context);
 
-    await sendWhatsAppText(wa_id, aiReply);
-    await saveMessage(wa_id, "out", aiReply);
-    return res.sendStatus(200);
-  }
+        await sendWhatsAppText(wa_id, aiReply);
+        await saveMessage(wa_id, "out", aiReply);
+        return res.sendStatus(200);
+      }
 
-  const quantity = detectQuantity(text);
+      const quantity = detectQuantity(text);
 
-  if (quantity) {
-    state.quantity = quantity;
-    state.step = "awaiting_city";
+      if (quantity) {
+        state.quantity = quantity;
+        state.step = "awaiting_city";
 
-    const reply = `Listo, ${quantity} unidad(es). ¿En qué ciudad estás para confirmarte el envío?`;
+        const reply = `Listo, ${quantity} unidad(es). ¿En qué ciudad estás para confirmarte el envío?`;
 
-    await sendWhatsAppText(wa_id, reply);
-    await saveMessage(wa_id, "out", reply);
-    return res.sendStatus(200);
-  }
+        await sendWhatsAppText(wa_id, reply);
+        await saveMessage(wa_id, "out", reply);
+        return res.sendStatus(200);
+      }
 
-  const reply = "Perfecto. ¿Cuántas unidades vas a llevar?";
+      const reply = "Perfecto. ¿Cuántas unidades vas a llevar?";
 
-  await sendWhatsAppText(wa_id, reply);
-  await saveMessage(wa_id, "out", reply);
-  return res.sendStatus(200);
-}
+      await sendWhatsAppText(wa_id, reply);
+      await saveMessage(wa_id, "out", reply);
+      return res.sendStatus(200);
+    }
 
-    // Si está esperando ciudad
+    // 7) Esperando ciudad
     if (state.step === "awaiting_city" && state.product) {
-  if (isConversationalMessage(text)) {
-    const context = await getRecentContext(wa_id, 10);
-    const aiReply = await chatWithAI(text, context);
+      if (isConversationalMessage(text)) {
+        const context = await getRecentContext(wa_id, 10);
+        const aiReply = await chatWithAI(text, context);
 
-    await sendWhatsAppText(wa_id, aiReply);
-    await saveMessage(wa_id, "out", aiReply);
-    return res.sendStatus(200);
-  }
+        await sendWhatsAppText(wa_id, aiReply);
+        await saveMessage(wa_id, "out", aiReply);
+        return res.sendStatus(200);
+      }
 
-  const city = detectCity(text);
-  state.city = city;
-  state.step = "awaiting_payment";
+      const city = detectCity(text);
+      state.city = city;
+      state.step = "awaiting_payment";
 
-  const shippingInfo = getShippingInfo(
-    city,
-    state.quantity || 1,
-    parsePrice(state.product.price)
-  );
+      const shippingInfo = getShippingInfo(
+        city,
+        state.quantity || 1,
+        parsePrice(state.product.price)
+      );
 
-  const reply = `${shippingInfo} ¿Prefieres pagar por transferencia o contraentrega?`;
+      const reply = `${shippingInfo} ¿Prefieres pagar por transferencia o contraentrega?`;
 
-  await sendWhatsAppText(wa_id, reply);
-  await saveMessage(wa_id, "out", reply);
-  return res.sendStatus(200);
-}
+      await sendWhatsAppText(wa_id, reply);
+      await saveMessage(wa_id, "out", reply);
+      return res.sendStatus(200);
+    }
 
-    // Si está esperando método de pago
+    // 8) Esperando método de pago
     if (state.step === "awaiting_payment" && state.product) {
-  if (isConversationalMessage(text)) {
-    const context = await getRecentContext(wa_id, 10);
-    const aiReply = await chatWithAI(text, context);
+      if (isConversationalMessage(text)) {
+        const context = await getRecentContext(wa_id, 10);
+        const aiReply = await chatWithAI(text, context);
 
-    await sendWhatsAppText(wa_id, aiReply);
-    await saveMessage(wa_id, "out", aiReply);
-    return res.sendStatus(200);
-  }
+        await sendWhatsAppText(wa_id, aiReply);
+        await saveMessage(wa_id, "out", aiReply);
+        return res.sendStatus(200);
+      }
 
-  const paymentMethod = detectPaymentMethod(text);
+      const paymentMethod = detectPaymentMethod(text);
 
-  if (paymentMethod) {
-    state.paymentMethod = paymentMethod;
-    state.step = "awaiting_order_details";
+      if (paymentMethod) {
+        state.paymentMethod = paymentMethod;
+        state.step = "awaiting_order_details";
 
-    const summary = buildOrderSummary(state);
+        const summary = buildOrderSummary(state);
 
-    const reply = `${summary}\n\nAhora para dejarte el pedido listo envíame por favor:\n- Nombre\n- Dirección\n- Teléfono\n\nSi es entrega en oficina, también la cédula.`;
+        const reply = `${summary}\n\nAhora para dejarte el pedido listo envíame por favor:\n- Nombre\n- Dirección\n- Teléfono\n\nSi es entrega en oficina, también la cédula.`;
 
-    await sendWhatsAppText(wa_id, reply);
-    await saveMessage(wa_id, "out", reply);
+        await sendWhatsAppText(wa_id, reply);
+        await saveMessage(wa_id, "out", reply);
 
-    await upsertLead(wa_id, wa_name, text, {
-      stage: "Listo para cerrar",
-      product_model: state.product.model,
-      accessory_type: state.product.category,
-      color: state.color,
-      city: state.city,
-      payment_method: state.paymentMethod
-    });
+        await upsertLead(wa_id, wa_name, text, {
+          stage: "Listo para cerrar",
+          product_model: state.product.model,
+          accessory_type: state.product.category,
+          color: state.color,
+          city: state.city,
+          payment_method: state.paymentMethod
+        });
 
-    return res.sendStatus(200);
-  }
+        return res.sendStatus(200);
+      }
 
-  const reply = "¿Prefieres pagar por transferencia o contraentrega?";
+      const reply = "¿Prefieres pagar por transferencia o contraentrega?";
 
-  await sendWhatsAppText(wa_id, reply);
-  await saveMessage(wa_id, "out", reply);
-  return res.sendStatus(200);
-}
+      await sendWhatsAppText(wa_id, reply);
+      await saveMessage(wa_id, "out", reply);
+      return res.sendStatus(200);
+    }
 
-    // Si ya está listo para dejar datos
+    // 9) Esperando datos finales, pero permitiendo cambios
     if (state.step === "awaiting_order_details" && state.product) {
-  // Si quiere cambiar producto aún en esta etapa
-  const changedProduct = findProductFromText(text);
-  if (changedProduct) {
-    startNewOrderFromProduct(state, changedProduct);
+      if (isConversationalMessage(text)) {
+        const context = await getRecentContext(wa_id, 10);
+        const aiReply = await chatWithAI(text, context);
 
-    const reply = `Claro 👌 cambiamos el pedido. ${buildProductReply(changedProduct, text)}`;
-    await sendWhatsAppText(wa_id, reply);
-    await saveMessage(wa_id, "out", reply);
-    return res.sendStatus(200);
-  }
+        await sendWhatsAppText(wa_id, aiReply);
+        await saveMessage(wa_id, "out", aiReply);
+        return res.sendStatus(200);
+      }
 
-  // Si cambia color
-  const changedColor = detectColor(text, state.product);
-  if (changedColor) {
-    state.color = changedColor;
+      const changedProduct = findProductFromText(text);
+      if (changedProduct) {
+        startNewOrderFromProduct(state, changedProduct);
 
-    const reply = `${buildOrderSummary(state)}\n\nListo, ya actualicé el color ✅ Ahora envíame por favor:\n- Nombre\n- Dirección\n- Teléfono`;
-    await sendWhatsAppText(wa_id, reply);
-    await saveMessage(wa_id, "out", reply);
-    return res.sendStatus(200);
-  }
+        const reply = `Claro 👌 cambiamos el pedido. ${buildProductReply(changedProduct, text)}`;
+        await sendWhatsAppText(wa_id, reply);
+        await saveMessage(wa_id, "out", reply);
+        return res.sendStatus(200);
+      }
 
-  // Si cambia cantidad
-  const changedQuantity = detectQuantity(text);
-  if (changedQuantity) {
-    state.quantity = changedQuantity;
+      const changedColor = detectColor(text, state.product);
+      if (changedColor) {
+        state.color = changedColor;
 
-    const reply = `${buildOrderSummary(state)}\n\nListo, ya actualicé la cantidad ✅ Ahora envíame por favor:\n- Nombre\n- Dirección\n- Teléfono`;
-    await sendWhatsAppText(wa_id, reply);
-    await saveMessage(wa_id, "out", reply);
-    return res.sendStatus(200);
-  }
+        const reply = `${buildOrderSummary(state)}\n\nListo, ya actualicé el color ✅ Ahora envíame por favor:\n- Nombre\n- Dirección\n- Teléfono`;
+        await sendWhatsAppText(wa_id, reply);
+        await saveMessage(wa_id, "out", reply);
+        return res.sendStatus(200);
+      }
 
-  // Si cambia ciudad
-  const changedCity = detectCity(text);
-  if (changedCity && normalizeText(text).length > 3 && !/\d/.test(text)) {
-    state.city = changedCity;
+      const changedQuantity = detectQuantity(text);
+      if (changedQuantity) {
+        state.quantity = changedQuantity;
 
-    const reply = `${buildOrderSummary(state)}\n\nListo, ya actualicé la ciudad ✅ Ahora envíame por favor:\n- Nombre\n- Dirección\n- Teléfono`;
-    await sendWhatsAppText(wa_id, reply);
-    await saveMessage(wa_id, "out", reply);
-    return res.sendStatus(200);
-  }
+        const reply = `${buildOrderSummary(state)}\n\nListo, ya actualicé la cantidad ✅ Ahora envíame por favor:\n- Nombre\n- Dirección\n- Teléfono`;
+        await sendWhatsAppText(wa_id, reply);
+        await saveMessage(wa_id, "out", reply);
+        return res.sendStatus(200);
+      }
 
-  // Si cambia pago
-  const changedPayment = detectPaymentMethod(text);
-  if (changedPayment) {
-    state.paymentMethod = changedPayment;
+      const changedCity = detectCity(text);
+      if (changedCity && normalizeText(text).length > 3 && !/\d/.test(text)) {
+        state.city = changedCity;
 
-    const reply = `${buildOrderSummary(state)}\n\nPerfecto, ya actualicé el método de pago ✅ Ahora envíame por favor:\n- Nombre\n- Dirección\n- Teléfono`;
-    await sendWhatsAppText(wa_id, reply);
-    await saveMessage(wa_id, "out", reply);
-    return res.sendStatus(200);
-  }
+        const reply = `${buildOrderSummary(state)}\n\nListo, ya actualicé la ciudad ✅ Ahora envíame por favor:\n- Nombre\n- Dirección\n- Teléfono`;
+        await sendWhatsAppText(wa_id, reply);
+        await saveMessage(wa_id, "out", reply);
+        return res.sendStatus(200);
+      }
 
-  const reply = "Perfecto, quedo atento a tus datos para dejarte el pedido listo ✅";
-  await sendWhatsAppText(wa_id, reply);
-  await saveMessage(wa_id, "out", reply);
-  return res.sendStatus(200);
-}
+      const changedPayment = detectPaymentMethod(text);
+      if (changedPayment) {
+        state.paymentMethod = changedPayment;
 
-    // Reglas rápidas
+        const reply = `${buildOrderSummary(state)}\n\nPerfecto, ya actualicé el método de pago ✅ Ahora envíame por favor:\n- Nombre\n- Dirección\n- Teléfono`;
+        await sendWhatsAppText(wa_id, reply);
+        await saveMessage(wa_id, "out", reply);
+        return res.sendStatus(200);
+      }
+
+      const reply = "Perfecto, quedo atento a tus datos para dejarte el pedido listo ✅";
+      await sendWhatsAppText(wa_id, reply);
+      await saveMessage(wa_id, "out", reply);
+      return res.sendStatus(200);
+    }
+
+    // 10) Reglas rápidas
     const ruleReply = ruleEngine(text);
     if (ruleReply) {
       await sendWhatsAppText(wa_id, ruleReply);
@@ -737,7 +736,7 @@ if (forcedProduct && state.step) {
       return res.sendStatus(200);
     }
 
-    // IA
+    // 11) IA general
     const context = await getRecentContext(wa_id, 10);
     const aiReply = await chatWithAI(text, context);
 
@@ -751,45 +750,6 @@ if (forcedProduct && state.step) {
     return res.sendStatus(200);
   }
 });
-
-function ruleEngine(text) {
-  const t = text.toLowerCase().trim();
-
-  if (/^(hola|holi|buenas|buenos dias|buenas tardes|buenas noches)$/.test(t)) {
-    return "Hola, bienvenido a MundoNetTech 👋 ¿Qué producto estás buscando? Si quieres, dime el modelo exacto y te ayudo de una vez.";
-  }
-
-  if (/^(si|sí|dale|ok|bueno|de una|listo)$/.test(t)) {
-    return null;
-  }
-
-  // Primero pagos
-  if (/(pago|transferencia|contraentrega|contra entrega|nequi|daviplata|bancolombia)/i.test(t)) {
-    return "Manejamos transferencia y pago contraentrega según ciudad. Si quieres, te confirmo cuál te aplica según tu ubicación.";
-  }
-
-  if (/precio/i.test(t) && !/iphone|redmi|galaxy|watch|xiaomi|cargador|cable|pulsera|funda|protector/i.test(t)) {
-    return "Claro. Dime el producto exacto o el modelo de tu equipo y te doy el precio de una vez 👌";
-  }
-
-  if (/(env[ií]o|cu[aá]nto tarda|tarda|domicilio|entrega)/i.test(t)) {
-    return "Hacemos envíos a nivel nacional. En la mayoría de ciudades tarda de 1 a 3 días hábiles. Si estás en Bogotá o Soacha en zonas seleccionadas, puede llegar el mismo día. ¿En qué ciudad estás?";
-  }
-
-  if (/(garant[ií]a|garantia)/i.test(t)) {
-    return "Sí, todos nuestros productos tienen garantía por defectos de fábrica ✅";
-  }
-
-  if (/(compatible|compatibilidad|sirve|le sirve)/i.test(t)) {
-    return "Sí te ayudo con eso. Escríbeme el modelo exacto de tu equipo y te confirmo antes de comprar 🔎";
-  }
-
-  if (/(quiero comprar|quiero pedir|lo quiero|me interesa|hagamos el pedido|quiero hacer el pedido)/i.test(t)) {
-    return "Perfecto 🔥 Te tomo el pedido de una vez. Envíame por favor: nombre, ciudad, dirección, teléfono y método de pago.";
-  }
-
-  return null;
-}
 
 async function chatWithAI(userText, contextMessages) {
   const system = `
