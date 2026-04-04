@@ -212,39 +212,42 @@ app.post("/webhook", async (req, res) => {
     }
 
     // Reglas rápidas
-const ruleReply = ruleEngine(text);
-if (ruleReply) {
-  await sendWhatsAppText(wa_id, ruleReply);
-  await saveMessage(wa_id, "out", ruleReply);
-  await upsertLead(wa_id, wa_name, text, { stage: inferStage(text) });
-  return res.sendStatus(200);
-}
+    const ruleReply = ruleEngine(text);
+    if (ruleReply) {
+      await sendWhatsAppText(wa_id, ruleReply);
+      await saveMessage(wa_id, "out", ruleReply);
+      await upsertLead(wa_id, wa_name, text, { stage: inferStage(text) });
+      return res.sendStatus(200);
+    }
 
-// Detección de producto exacto
-const detectedProduct = findProductFromText(text);
-if (detectedProduct) {
-  const productReply = buildProductReply(detectedProduct, text);
+    // Detección de producto exacto
+    const detectedProduct = findProductFromText(text);
+    if (detectedProduct) {
+      const productReply = buildProductReply(detectedProduct, text);
 
-  await sendWhatsAppText(wa_id, productReply);
-  await saveMessage(wa_id, "out", productReply);
-  await upsertLead(wa_id, wa_name, text, {
-    stage: inferStage(text),
-    product_model: detectedProduct.model,
-    accessory_type: detectedProduct.category
-  });
+      await sendWhatsAppText(wa_id, productReply);
+      await saveMessage(wa_id, "out", productReply);
+      await upsertLead(wa_id, wa_name, text, {
+        stage: inferStage(text),
+        product_model: detectedProduct.model,
+        accessory_type: detectedProduct.category
+      });
 
-  return res.sendStatus(200);
-}
+      return res.sendStatus(200);
+    }
 
-// IA
-const context = await getRecentContext(wa_id, 10);
-const aiReply = await chatWithAI(text, context);
+    // IA
+    const context = await getRecentContext(wa_id, 10);
+    const aiReply = await chatWithAI(text, context);
 
-await sendWhatsAppText(wa_id, aiReply);
-await saveMessage(wa_id, "out", aiReply);
-await upsertLead(wa_id, wa_name, text, { stage: inferStage(text) });
+    await sendWhatsAppText(wa_id, aiReply);
+    await saveMessage(wa_id, "out", aiReply);
+    await upsertLead(wa_id, wa_name, text, { stage: inferStage(text) });
 
-return res.sendStatus(200);
+    return res.sendStatus(200);
+  } catch (err) {
+    console.error("Webhook error:", err?.response?.data || err.message);
+    return res.sendStatus(200);
   }
 });
 
