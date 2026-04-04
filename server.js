@@ -207,7 +207,10 @@ function detectColor(text, product) {
   const normalizedText = normalizeText(text);
 
   for (const color of product.colors) {
-    if (normalizedText.includes(normalizeText(color))) {
+    const normalizedColor = normalizeText(color);
+
+    // Detecta coincidencia parcial (ej: "negro 40mm")
+    if (normalizedText.includes(normalizedColor.split(" ")[0])) {
       return color;
     }
   }
@@ -339,7 +342,7 @@ app.post("/webhook", async (req, res) => {
 
     // Si detecta producto exacto
     const detectedProduct = findProductFromText(text);
-    if (detectedProduct) {
+    if (detectedProduct && !state.step) {
       state.product = detectedProduct;
       state.color = null;
       state.quantity = null;
@@ -448,14 +451,14 @@ app.post("/webhook", async (req, res) => {
         return res.sendStatus(200);
       }
 
-      const reply = "Prefieres pagar por transferencia o contraentrega?";
+      const reply = "¿Prefieres pagar por transferencia o contraentrega?";
 
       await sendWhatsAppText(wa_id, reply);
       await saveMessage(wa_id, "out", reply);
       return res.sendStatus(200);
     }
 
-    // Si ya está listo para dejar datos, ya no lo saques del flujo
+    // Si ya está listo para dejar datos
     if (state.step === "awaiting_order_details" && state.product) {
       const reply = "Perfecto, quedo atento a tus datos para dejarte el pedido listo ✅";
       await sendWhatsAppText(wa_id, reply);
