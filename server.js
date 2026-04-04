@@ -238,29 +238,38 @@ function detectColor(text, product) {
   const normalizedText = normalizeText(text);
   const words = normalizedText.split(/\s+/);
 
+  let bestMatch = null;
+  let bestScore = 0;
+
   for (const color of product.colors) {
     const normalizedColor = normalizeText(color);
     const colorWords = normalizedColor.split(/\s+/);
 
-    // Coincidencia exacta o parcial directa
+    let score = 0;
+
+    // coincidencia exacta completa
     if (normalizedText.includes(normalizedColor)) {
       return color;
     }
 
-    // Coincidencia aproximada por palabras
-    let matches = 0;
+    // coincidencia por palabras aproximadas
     for (const cw of colorWords) {
       for (const w of words) {
         if (isSimilarWord(w, cw, 2)) {
-          matches++;
+          score++;
           break;
         }
       }
     }
 
-    if (matches >= Math.max(1, colorWords.length - 1)) {
-      return color;
+    if (score > bestScore) {
+      bestScore = score;
+      bestMatch = color;
     }
+  }
+
+  if (bestScore >= 1) {
+    return bestMatch;
   }
 
   return null;
@@ -529,65 +538,86 @@ app.post("/webhook", async (req, res) => {
 
     // 5) Esperando color
     if (state.step === "awaiting_color" && state.product) {
-      if (isConversationalMessage(text)) {
-        const context = await getRecentContext(wa_id, 10);
-        const aiReply = await chatWithAI(text, context);
+  if (isConversationalMessage(text)) {
+    const context = await getRecentContext(wa_id, 10);
+    const aiReply = await chatWithAI(text, context);
 
-        await sendWhatsAppText(wa_id, aiReply);
-        await saveMessage(wa_id, "out", aiReply);
-        return res.sendStatus(200);
-      }
+    await sendWhatsAppText(wa_id, aiReply);
+    await saveMessage(wa_id, "out", aiReply);
+    return res.sendStatus(200);
+  }
 
-      const detectedColor = detectColor(text, state.product);
+  const detectedColor = detectColor(text, state.product);
 
-      if (detectedColor) {
-        state.color = detectedColor;
-        state.step = "awaiting_quantity";
+  console.log("COLOR STEP", {
+    text,
+    product: state.product?.name,
+    detectedColor
+  });
 
-        const reply = `Perfecto 🔥 ${detectedColor}. ¿Cuántas unidades vas a llevar?`;
+  if (detectedColor) {
+    state.color = detectedColor;
+    state.step = "awaiting_quantity";
 
-        await sendWhatsAppText(wa_id, reply);
-        await saveMessage(wa_id, "out", reply);
-        return res.sendStatus(200);
-      }
+    const reply = `Perfecto 🔥 ${detectedColor}. ¿Cuántas unidades vas a llevar?`;
 
-      const reply = `Tengo estos colores disponibles para ${state.product.name}: ${state.product.colors.join(", ")}. ¿Cuál te gustaría?`;
+    await sendWhatsAppText(wa_id, reply);
+    await saveMessage(wa_id, "out", reply);
 
-      await sendWhatsAppText(wa_id, reply);
-      await saveMessage(wa_id, "out", reply);
-      return res.sendStatus(200);
-    }
+    await upsertLead(wa_id, wa_name, text, {
+      stage: "Color elegido",
+      product_model: state.product.model,
+      accessory_type: state.product.category,
+      color: detectedColor
+    });
+
+    return res.sendStatus(200);
+  }
+
+  const reply = `Tengo estos colores disponibles para ${state.product.name}: ${state.product.colors.join(", ")}. ¿Cuál te gustaría?`;
+
+  await sendWhatsAppText(wa_id, reply);
+  await saveMessage(wa_id, "out", reply);
+  return res.sendStatus(200);
+}
 
     // 6) Esperando cantidad
     if (state.step === "awaiting_quantity" && state.product) {
-      if (isConversationalMessage(text)) {
-        const context = await getRecentContext(wa_id, 10);
-        const aiReply = await chatWithAI(text, context);
+  console.log("QUANTITY STEP", {
+    text,
+    state: state.step,
+    product: state.product?.name,
+    color: state.color
+  });
 
-        await sendWhatsAppText(wa_id, aiReply);
-        await saveMessage(wa_id, "out", aiReply);
-        return res.sendStatus(200);
-      }
+  if (isConversationalMessage(text)) {
+    const context = await getRecentContext(wa_id, 10);
+    const aiReply = await chatWithAI(text, context);
 
-      const quantity = detectQuantity(text);
+    await sendWhatsAppText(wa_id, aiReply);
+    await saveMessage(wa_id, "out", aiReply);
+    return res.sendStatus(200);
+  }
 
-      if (quantity) {
-        state.quantity = quantity;
-        state.step = "awaiting_city";
+  const quantity = detectQuantity(text);
 
-        const reply = `Listo, ${quantity} unidad(es). ¿En qué ciudad estás para confirmarte el envío?`;
+  if (quantity) {
+    state.quantity = quantity;
+    state.step = "awaiting_city";
 
-        await sendWhatsAppText(wa_id, reply);
-        await saveMessage(wa_id, "out", reply);
-        return res.sendStatus(200);
-      }
+    const reply = `Listo, ${quantity} unidad(es). ¿En qué ciudad estás para confirmarte el envío?`;
 
-      const reply = "Perfecto. ¿Cuántas unidades vas a llevar?";
+    await sendWhatsAppText(wa_id, reply);
+    await saveMessage(wa_id, "out", reply);
+    return res.sendStatus(200);
+  }
 
-      await sendWhatsAppText(wa_id, reply);
-      await saveMessage(wa_id, "out", reply);
-      return res.sendStatus(200);
-    }
+  const reply = "Perfecto. ¿Cuántas unidades vas a llevar?";
+
+  await sendWhatsAppText(wa_id, reply);
+  await saveMessage(wa_id, "out", reply);
+  return res.sendStatus(200);
+}
 
     // 7) Esperando ciudad
     if (state.step === "awaiting_city" && state.product) {
