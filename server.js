@@ -351,6 +351,15 @@ function detectPaymentMethod(text) {
   return null;
 }
 
+  if (isConversationalMessage(text)) {
+    const context = await getRecentContext(wa_id, 10);
+    const aiReply = await chatWithAI(text, context);
+
+    await sendWhatsAppText(wa_id, aiReply);
+    await saveMessage(wa_id, "out", aiReply);
+    return res.sendStatus(200);
+  }
+
 function getShippingInfo(city, quantity = 1, productPrice = 0) {
   const normalizedCity = normalizeText(city || "");
   const total = (productPrice || 0) * (quantity || 1);
@@ -535,6 +544,15 @@ if (forcedProduct && state.step) {
 
     // Si está esperando color
     if (state.step === "awaiting_color" && state.product) {
+
+  if (isConversationalMessage(text)) {
+    const context = await getRecentContext(wa_id, 10);
+    const aiReply = await chatWithAI(text, context);
+
+    await sendWhatsAppText(wa_id, aiReply);
+    await saveMessage(wa_id, "out", aiReply);
+    return res.sendStatus(200);
+  }
   const detectedColor = detectColor(text, state.product);
 
   if (detectedColor) {
@@ -557,28 +575,46 @@ if (forcedProduct && state.step) {
 
     // Si está esperando cantidad
     if (state.step === "awaiting_quantity" && state.product) {
-      const quantity = detectQuantity(text);
+  if (isConversationalMessage(text)) {
+    const context = await getRecentContext(wa_id, 10);
+    const aiReply = await chatWithAI(text, context);
 
-      if (quantity) {
-        state.quantity = quantity;
-        state.step = "awaiting_city";
+    await sendWhatsAppText(wa_id, aiReply);
+    await saveMessage(wa_id, "out", aiReply);
+    return res.sendStatus(200);
+  }
 
-        const reply = `Listo, ${quantity} unidad(es). ¿En qué ciudad estás para confirmarte el envío?`;
+  const quantity = detectQuantity(text);
 
-        await sendWhatsAppText(wa_id, reply);
-        await saveMessage(wa_id, "out", reply);
-        return res.sendStatus(200);
-      }
+  if (quantity) {
+    state.quantity = quantity;
+    state.step = "awaiting_city";
 
-      const reply = "Perfecto. ¿Cuántas unidades vas a llevar?";
+    const reply = `Listo, ${quantity} unidad(es). ¿En qué ciudad estás para confirmarte el envío?`;
 
-      await sendWhatsAppText(wa_id, reply);
-      await saveMessage(wa_id, "out", reply);
-      return res.sendStatus(200);
-    }
+    await sendWhatsAppText(wa_id, reply);
+    await saveMessage(wa_id, "out", reply);
+    return res.sendStatus(200);
+  }
+
+  const reply = "Perfecto. ¿Cuántas unidades vas a llevar?";
+
+  await sendWhatsAppText(wa_id, reply);
+  await saveMessage(wa_id, "out", reply);
+  return res.sendStatus(200);
+}
 
     // Si está esperando ciudad
     if (state.step === "awaiting_city" && state.product) {
+  if (isConversationalMessage(text)) {
+    const context = await getRecentContext(wa_id, 10);
+    const aiReply = await chatWithAI(text, context);
+
+    await sendWhatsAppText(wa_id, aiReply);
+    await saveMessage(wa_id, "out", aiReply);
+    return res.sendStatus(200);
+  }
+
   const city = detectCity(text);
   state.city = city;
   state.step = "awaiting_payment";
@@ -598,6 +634,15 @@ if (forcedProduct && state.step) {
 
     // Si está esperando método de pago
     if (state.step === "awaiting_payment" && state.product) {
+  if (isConversationalMessage(text)) {
+    const context = await getRecentContext(wa_id, 10);
+    const aiReply = await chatWithAI(text, context);
+
+    await sendWhatsAppText(wa_id, aiReply);
+    await saveMessage(wa_id, "out", aiReply);
+    return res.sendStatus(200);
+  }
+
   const paymentMethod = detectPaymentMethod(text);
 
   if (paymentMethod) {
@@ -622,6 +667,13 @@ if (forcedProduct && state.step) {
 
     return res.sendStatus(200);
   }
+
+  const reply = "¿Prefieres pagar por transferencia o contraentrega?";
+
+  await sendWhatsAppText(wa_id, reply);
+  await saveMessage(wa_id, "out", reply);
+  return res.sendStatus(200);
+}
 
   const reply = "¿Prefieres pagar por transferencia o contraentrega?";
 
